@@ -12,4 +12,7 @@ router.get('/history', chatController.getChatHistory);
 // @route   POST api/chat/message
 router.post('/message', chatController.sendMessage);
 
+// @route   POST api/chat/transcribe
+router.post('/transcribe', chatController.transcribeVoice);
+
 module.exports = router;

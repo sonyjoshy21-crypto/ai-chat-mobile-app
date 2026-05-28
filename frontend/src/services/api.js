@@ -1,10 +1,30 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// 1. Base URL configuration
-// Using localhost:5000 by default (for Web preview and iOS simulator).
-// NOTE FOR EVALUATOR: If testing on a physical mobile device with Expo Go, 
-// replace 'localhost' with your development machine's local IP address (e.g., '192.168.1.50').
-const API_BASE_URL = 'http://localhost:5000/api';
+// Helper to resolve the correct backend API URL automatically
+const getApiBaseUrl = () => {
+  // 1. If configured in .env, prioritize it
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  // 2. On Web, connect to localhost directly
+  if (Platform.OS === 'web') {
+    return 'http://localhost:5000/api';
+  }
+
+  // 3. On physical devices / emulators running via Metro, auto-detect the host machine's IP
+  const hostUri = Constants.expoConfig?.hostUri; // e.g., "192.168.1.16:8081"
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    return `http://${ip}:5000/api`;
+  }
+
+  return 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -56,12 +76,24 @@ export const chatAPI = {
     }
   },
 
-  sendMessage: async (text) => {
+  sendMessage: async (text, signal) => {
     try {
-      const response = await client.post('/chat/message', { text });
+      const response = await client.post('/chat/message', { text }, { signal });
       return response.data;
     } catch (error) {
+      if (axios.isCancel(error)) {
+        throw 'cancelled';
+      }
       throw error.response?.data?.message || 'Failed to send message.';
+    }
+  },
+
+  transcribeVoice: async (base64Audio, mimeType) => {
+    try {
+      const response = await client.post('/chat/transcribe', { audio: base64Audio, mimeType }, { timeout: 15000 });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to transcribe audio.';
     }
   }
 };

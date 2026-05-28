@@ -41,11 +41,11 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (isLogin) {
         const response = await authAPI.login(email.trim(), password);
         setAuthToken(response.token);
-        onLoginSuccess(response.user);
+        onLoginSuccess({ ...response.user, token: response.token });
       } else {
         const response = await authAPI.register(name.trim(), email.trim(), password);
         setAuthToken(response.token);
-        onLoginSuccess(response.user);
+        onLoginSuccess({ ...response.user, token: response.token });
       }
     } catch (error) {
       setErrorMsg(error.toString());

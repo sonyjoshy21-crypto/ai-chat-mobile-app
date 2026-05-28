@@ -98,10 +98,11 @@ exports.sendMessage = async (req, res) => {
     // 2. Fetch AI Response (Gemini SDK vs Mock Fallback)
     if (genAI) {
       try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash';
+        const model = genAI.getGenerativeModel({ model: chatModel });
         
         // Formulate a structured prompt to keep Gemini responses brief and neat for mobile layouts
-        const systemPrompt = `You are a helpful assistant for a MERN stack assessment demonstration. Keep your responses friendly, informative, structured, and reasonably brief for mobile screen viewports. User inquiry: ${text.trim()}`;
+        const systemPrompt = `You are a helpful assistant for a MERN stack assessment demonstration. Keep your responses friendly, informative, structured, and extremely concise (maximum 2-3 sentences or a short bulleted list), as they will be displayed on a mobile screen viewport. User inquiry: ${text.trim()}`;
         
         const result = await model.generateContent(systemPrompt);
         const response = await result.response;
@@ -135,6 +136,71 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to process message or obtain AI response.'
+    });
+  }
+};
+
+// @route   POST api/chat/transcribe
+// @desc    Transcribe base64 audio using Gemini AI
+exports.transcribeVoice = async (req, res) => {
+  const { audio, mimeType } = req.body;
+
+  if (!audio) {
+    return res.status(400).json({
+      success: false,
+      message: 'Audio data is missing.'
+    });
+  }
+
+  try {
+    let transcribedText = '';
+
+    if (genAI) {
+      try {
+        const sttModel = process.env.GEMINI_STT_MODEL || 'gemini-1.5-flash';
+        const model = genAI.getGenerativeModel({ model: sttModel });
+        
+        // Timeout promise of 4 seconds to prevent client timeout on 503 retry loops
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Gemini API Timeout')), 4000)
+        );
+
+        const apiPromise = model.generateContent([
+          {
+            inlineData: {
+              data: audio,
+              mimeType: mimeType || 'audio/m4a'
+            }
+          },
+          "Transcribe the following audio precisely. Return ONLY the transcribed text. Do not include any explanations, greetings, or formatting. If there is no audible speech, return an empty string."
+        ]);
+
+        const result = await Promise.race([apiPromise, timeoutPromise]);
+        const response = await result.response;
+        transcribedText = response.text().trim();
+      } catch (sdkError) {
+        console.error('[Gemini STT Failed]', sdkError);
+        return res.status(503).json({
+          success: false,
+          message: 'Voice transcription is temporarily unavailable. Please try typing your message.'
+        });
+      }
+    } else {
+      // Simulate backend delay (800ms)
+      await new Promise(resolve => setTimeout(resolve, 800));
+      transcribedText = "Show me the clean code architecture in this MERN project.";
+    }
+
+    res.status(200).json({
+      success: true,
+      text: transcribedText
+    });
+
+  } catch (error) {
+    console.error('[Transcribe Error]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to transcribe audio.'
     });
   }
 };

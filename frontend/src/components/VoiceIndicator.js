@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function VoiceIndicator({ isRecording }) {
-  if (!isRecording) return null;
-
+export default function VoiceIndicator({ isRecording, onCancel, onDone }) {
   // Create individual animated heights for the soundwave bars
   const anim1 = useRef(new Animated.Value(10)).current;
   const anim2 = useRef(new Animated.Value(10)).current;
@@ -13,6 +12,8 @@ export default function VoiceIndicator({ isRecording }) {
 
   // Bouncing animations looping in parallel
   useEffect(() => {
+    if (!isRecording) return;
+
     const createBouncingLoop = (value, min, max, duration) => {
       return Animated.loop(
         Animated.sequence([
@@ -46,7 +47,9 @@ export default function VoiceIndicator({ isRecording }) {
       anim4.stopAnimation();
       anim5.stopAnimation();
     };
-  }, [anim1, anim2, anim3, anim4, anim5]);
+  }, [isRecording, anim1, anim2, anim3, anim4, anim5]);
+
+  if (!isRecording) return null;
 
   return (
     <View style={styles.container}>
@@ -60,7 +63,18 @@ export default function VoiceIndicator({ isRecording }) {
       </View>
       
       <Text style={styles.recordText}>Listening & Transcribing...</Text>
-      <Text style={styles.subText}>Speak clearly now. Click the mic again to send.</Text>
+      
+      <View style={styles.actionButtons}>
+        <TouchableOpacity style={styles.doneBtn} onPress={onDone} activeOpacity={0.7}>
+          <Ionicons name="checkmark-circle" size={54} color="#10b981" />
+          <Text style={styles.doneText}>Stop & Send</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
+          <Ionicons name="close-circle-outline" size={20} color="#fca5a5" />
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -99,5 +113,38 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 12,
     marginTop: 6,
+  },
+  actionButtons: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginTop: 40,
+    width: '100%',
+  },
+  doneBtn: {
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  doneText: {
+    color: '#10b981',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8,
+    letterSpacing: 0.5,
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  cancelText: {
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
   },
 });

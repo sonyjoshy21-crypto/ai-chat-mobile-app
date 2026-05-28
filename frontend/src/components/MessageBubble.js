@@ -1,29 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function MessageBubble({ message, isNewAI }) {
-  const { sender, text, createdAt } = message;
+  const { sender, text, createdAt, isError } = message;
   const isUser = sender === 'user';
   
   // Streaming state for typing effect
   const [displayedText, setDisplayedText] = useState('');
+  const [isTyping, setIsTyping] = useState(!isUser && isNewAI);
+  const intervalRef = useRef(null);
   
   useEffect(() => {
     // If it's a new AI message, stream the characters
     if (!isUser && isNewAI) {
+      setIsTyping(true);
       let currentIdx = 0;
-      const interval = setInterval(() => {
-        setDisplayedText((prev) => prev + text.charAt(currentIdx));
-        currentIdx++;
-        if (currentIdx >= text.length) {
-          clearInterval(interval);
-        }
+      setDisplayedText('');
+      
+      intervalRef.current = setInterval(() => {
+        setDisplayedText((prev) => {
+          const nextText = prev + text.charAt(currentIdx);
+          currentIdx++;
+          if (currentIdx >= text.length) {
+            clearInterval(intervalRef.current);
+            setIsTyping(false);
+          }
+          return nextText;
+        });
       }, 15); // Fast typing cadence (15ms per character)
-      return () => clearInterval(interval);
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      };
     } else {
       setDisplayedText(text);
+      setIsTyping(false);
     }
   }, [text, isUser, isNewAI]);
+
+  const handleStopTyping = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      setIsTyping(false);
+    }
+  };
 
   // Clean time formatter
   const formatTime = (timeStr) => {
@@ -40,23 +60,40 @@ export default function MessageBubble({ message, isNewAI }) {
       {/* Sender Badge */}
       {!isUser && (
         <View style={styles.aiBadgeContainer}>
-          <Text style={styles.aiBadgeText}>🤖 Gemini AI</Text>
+          <Text style={[styles.aiBadgeText, isError && styles.errorBadgeText]}>
+            {isError ? '⚠️ System Alert' : '🤖 Addonez AI'}
+          </Text>
         </View>
       )}
 
       {/* Bubble Box */}
       <View style={[
         styles.bubble,
-        isUser ? styles.userBubble : styles.aiBubble
+        isUser ? styles.userBubble : styles.aiBubble,
+        isError && styles.errorBubble
       ]}>
-        <Text style={[styles.text, isUser ? styles.userText : styles.aiText]}>
+        <Text style={[
+          styles.text, 
+          isUser ? styles.userText : styles.aiText,
+          isError && styles.errorText
+        ]}>
           {displayedText}
         </Text>
         
-        {/* Timestamp */}
-        <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
-          {formatTime(createdAt)}
-        </Text>
+        <View style={styles.bubbleFooter}>
+          {/* Timestamp */}
+          <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
+            {formatTime(createdAt)}
+          </Text>
+
+          {/* Stop typing button */}
+          {!isUser && isTyping && (
+            <TouchableOpacity style={styles.bubbleStopBtn} onPress={handleStopTyping} activeOpacity={0.7}>
+              <Ionicons name="stop-circle" size={14} color="#f87171" />
+              <Text style={styles.bubbleStopText}>Stop</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -120,13 +157,46 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     fontSize: 10,
-    marginTop: 5,
-    alignSelf: 'flex-end',
   },
   userTimestamp: {
     color: 'rgba(255, 255, 255, 0.7)',
   },
   aiTimestamp: {
     color: '#64748b',
+  },
+  bubbleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  bubbleStopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 10,
+  },
+  bubbleStopText: {
+    color: '#f87171',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 2,
+  },
+  errorBubble: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    borderWidth: 1,
+  },
+  errorText: {
+    color: '#fca5a5',
+    fontWeight: '500',
+  },
+  errorBadgeText: {
+    color: '#ef4444',
   },
 });

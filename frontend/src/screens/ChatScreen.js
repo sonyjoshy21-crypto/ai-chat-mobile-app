@@ -9,10 +9,13 @@ import {
   ActivityIndicator, 
   KeyboardAvoidingView, 
   Platform,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { chatAPI } from '../services/api';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import { chatAPI, setAuthToken } from '../services/api';
 import MessageBubble from '../components/MessageBubble';
 import VoiceIndicator from '../components/VoiceIndicator';
 
@@ -28,11 +31,19 @@ export default function ChatScreen({ user, onLogout }) {
   const [newAiMsgId, setNewAiMsgId] = useState(null);
 
   const scrollViewRef = useRef();
+  const abortControllerRef = useRef(null);
+  const simulatedVoiceTimeoutRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const isSendingRef = useRef(false);
+  const recordingRef = useRef(null);
 
-  // 1. Fetch chat history on component load
+  // 1. Fetch chat history on component load & restore token on mount/Fast Refresh
   useEffect(() => {
+    if (user && user.token) {
+      setAuthToken(user.token);
+    }
     fetchHistory();
-  }, []);
+  }, [user]);
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -59,12 +70,17 @@ export default function ChatScreen({ user, onLogout }) {
   // 3. Send text message handler
   const handleSendMessage = async (textToSend = inputText) => {
     const trimmedText = textToSend.trim();
-    if (!trimmedText || sendingMessage) return;
+    if (!trimmedText || isSendingRef.current) return;
 
+    isSendingRef.current = true;
     setInputText('');
     setSendingMessage(true);
     setNewAiMsgId(null);
     setErrorMsg('');
+
+    // Create abort controller for stopping generation
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     // Append local speculative message immediately to keep UI ultra responsive
     const localUserMsg = {
@@ -77,7 +93,7 @@ export default function ChatScreen({ user, onLogout }) {
     scrollToBottom(50);
 
     try {
-      const response = await chatAPI.sendMessage(trimmedText);
+      const response = await chatAPI.sendMessage(trimmedText, controller.signal);
       
       // Update with matching backend objects (removes temp and adds Gemini reply)
       setMessages((prev) => {
@@ -89,47 +105,216 @@ export default function ChatScreen({ user, onLogout }) {
       setNewAiMsgId(response.aiMessage._id);
       scrollToBottom(50);
     } catch (err) {
-      setErrorMsg('Failed to fetch AI reply.');
-      // Remove speculative bubble on failure so user knows it failed
+      let finalErrorText = 'Failed to fetch AI reply.';
+      if (err === 'cancelled') {
+        finalErrorText = 'Generation stopped by user.';
+      } else if (typeof err === 'string') {
+        finalErrorText = err;
+      }
+      
+      // Show the error message on screen in a temporary banner
+      setErrorMsg(finalErrorText);
+
+      // Restore user text in input bar so they don't have to retype it
+      setInputText(trimmedText);
+
+      // Cleanly remove speculative bubble on failure
       setMessages((prev) => prev.filter(m => !m._id.startsWith('temp_')));
     } finally {
       setSendingMessage(false);
+      isSendingRef.current = false;
+      abortControllerRef.current = null;
     }
   };
 
-  // 4. Simulated interactive voice speech recognition
-  const handleVoiceRecordTrigger = () => {
-    if (sendingMessage) return;
-    setRecordingVoice(true);
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
 
-    // Bounces animation wave overlay for 2.5 seconds, then completes speech translation
-    setTimeout(() => {
+  // 4. Voice speech recognition (Web Speech API with Native Mobile Audio Recording Fallback)
+  const handleVoiceRecordTrigger = async () => {
+    if (sendingMessage) return;
+
+    // Check if browser SpeechRecognition is available (Web mode)
+    const SpeechRecognition = Platform.OS === 'web'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+
+    if (SpeechRecognition) {
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setRecordingVoice(true);
+          setErrorMsg('');
+        };
+
+        recognition.onresult = (event) => {
+          const speechToText = event.results[0][0].transcript;
+          if (speechToText && speechToText.trim() !== '') {
+            setInputText(speechToText);
+            handleSendMessage(speechToText);
+          }
+        };
+
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            setErrorMsg(`Speech error: ${event.error}`);
+          }
+        };
+
+        recognition.onend = () => {
+          setRecordingVoice(false);
+          recognitionRef.current = null;
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.error('Speech Recognition initialization failed, falling back:', err);
+        startMobileRecording();
+      }
+    } else {
+      // Mobile / Native Platform: Start real recording using expo-av!
+      startMobileRecording();
+    }
+  };
+
+  const startMobileRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setErrorMsg('Microphone permission is required for voice input.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      setRecordingVoice(true);
+      setErrorMsg('');
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      setErrorMsg('Failed to access microphone. Please check system permissions.');
+    }
+  };
+
+  const stopMobileRecordingAndTranscribe = async () => {
+    if (!recordingRef.current) return;
+
+    try {
       setRecordingVoice(false);
-      
-      const simulatedSpeeches = [
-        "Explain clean code architecture in this assessment.",
-        "What are the benefits of using MongoDB?",
-        "How is chat history persisted in this app?",
-        "Explain Option A and Option B requirements."
-      ];
-      const selectedSpeech = simulatedSpeeches[Math.floor(Math.random() * simulatedSpeeches.length)];
-      
-      // Load speech results to text bar and trigger message submit
-      setInputText(selectedSpeech);
-      setTimeout(() => {
-        handleSendMessage(selectedSpeech);
-      }, 500);
-    }, 2800);
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+
+      if (uri) {
+        // Read file as base64 string
+        const base64Audio = await FileSystem.readAsStringAsync(uri, {
+          encoding: 'base64',
+        });
+
+        // Determine mimeType (m4a is the default recording format on iOS/Android high quality preset)
+        const mimeType = Platform.OS === 'ios' ? 'audio/x-m4a' : 'audio/m4a';
+
+        setSendingMessage(true);
+        setNewAiMsgId(null);
+        setErrorMsg('');
+
+        // Append speculative user bubble
+        const localUserMsg = {
+          _id: 'temp_' + Date.now(),
+          sender: 'user',
+          text: '🎙️ Transcribing voice message...',
+          createdAt: new Date()
+        };
+        setMessages((prev) => [...prev, localUserMsg]);
+        scrollToBottom(50);
+
+        try {
+          const response = await chatAPI.transcribeVoice(base64Audio, mimeType);
+          
+          // Remove transcription temporary bubble
+          setMessages((prev) => prev.filter(m => m._id !== localUserMsg._id));
+
+          if (response.text && response.text.trim() !== '') {
+            // Trigger actual message send with transcribed text
+            handleSendMessage(response.text);
+          } else {
+            setErrorMsg('Speech could not be transcribed or was empty.');
+          }
+        } catch (transcribeErr) {
+          console.error('Transcription failed:', transcribeErr);
+          setMessages((prev) => prev.filter(m => m._id !== localUserMsg._id));
+          setErrorMsg(typeof transcribeErr === 'string' ? transcribeErr : 'Failed to transcribe audio.');
+        } finally {
+          setSendingMessage(false);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to stop recording:', err);
+      setRecordingVoice(false);
+      recordingRef.current = null;
+      setErrorMsg('Failed to process recorded audio.');
+    }
+  };
+
+  const handleCancelVoiceRecording = async () => {
+    if (Platform.OS === 'web' && recognitionRef.current) {
+      recognitionRef.current.abort();
+    } else if (recordingRef.current) {
+      try {
+        setRecordingVoice(false);
+        await recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      } catch (err) {
+        console.error('Failed to cancel recording:', err);
+        setRecordingVoice(false);
+        recordingRef.current = null;
+      }
+    } else {
+      setRecordingVoice(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    // Only capture Enter key on Web platform, and when Shift is NOT pressed
+    if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Visual audio soundwave full-screen simulation overlay */}
-      <VoiceIndicator isRecording={recordingVoice} />
+      <VoiceIndicator 
+        isRecording={recordingVoice} 
+        onCancel={handleCancelVoiceRecording} 
+        onDone={stopMobileRecordingAndTranscribe}
+      />
 
       <KeyboardAvoidingView 
         style={styles.container} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Sleek App Header Bar */}
         <View style={styles.header}>
@@ -151,6 +336,15 @@ export default function ChatScreen({ user, onLogout }) {
 
         {/* Core Chat Scroll View Box */}
         <View style={styles.chatArea}>
+          {errorMsg && messages.length > 0 && (
+            <View style={styles.inlineErrorBanner}>
+              <Ionicons name="warning-outline" size={16} color="#ef4444" />
+              <Text style={styles.inlineErrorText}>{errorMsg}</Text>
+              <TouchableOpacity onPress={() => setErrorMsg('')} style={styles.closeErrorBtn}>
+                <Ionicons name="close" size={16} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+          )}
           {loadingHistory ? (
             <View style={styles.centerContainer}>
               <ActivityIndicator color="#6366f1" size="large" />
@@ -158,7 +352,11 @@ export default function ChatScreen({ user, onLogout }) {
             </View>
           ) : errorMsg && messages.length === 0 ? (
             <View style={styles.centerContainer}>
-              <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+              {errorMsg.includes('stopped') ? (
+                <Text style={styles.errorText}>🛑 {errorMsg}</Text>
+              ) : (
+                <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+              )}
               <TouchableOpacity style={styles.retryBtn} onPress={fetchHistory}>
                 <Text style={styles.retryText}>Retry Sync</Text>
               </TouchableOpacity>
@@ -176,7 +374,7 @@ export default function ChatScreen({ user, onLogout }) {
                   <Ionicons name="chatbubbles-outline" size={48} color="#475569" />
                   <Text style={styles.welcomeTitle}>Welcome, {user?.name}!</Text>
                   <Text style={styles.welcomeSubtitle}>
-                    Start a conversation with Google Gemini AI. Ask questions about the MERN project, clean architecture, or general code quality.
+                    Start a conversation with Addonez AI. Ask questions about the MERN project, clean architecture, or general code quality.
                   </Text>
                   <View style={styles.tipCard}>
                     <Text style={styles.tipTitle}>💡 Try typing these statements:</Text>
@@ -199,11 +397,15 @@ export default function ChatScreen({ user, onLogout }) {
               {sendingMessage && (
                 <View style={styles.loadingBubbleContainer}>
                   <View style={styles.aiBadgeContainer}>
-                    <Text style={styles.aiBadgeText}>🤖 Gemini AI</Text>
+                    <Text style={styles.aiBadgeText}>🤖 Addonez AI</Text>
                   </View>
                   <View style={styles.loadingBubble}>
                     <ActivityIndicator size="small" color="#818cf8" style={styles.loadingDots} />
                     <Text style={styles.loadingBubbleText}>Thinking...</Text>
+                    <TouchableOpacity style={styles.stopBtn} onPress={handleStopGeneration} activeOpacity={0.7}>
+                      <Ionicons name="stop-circle" size={18} color="#ef4444" style={styles.stopIcon} />
+                      <Text style={styles.stopBtnText}>Stop</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}
@@ -220,6 +422,7 @@ export default function ChatScreen({ user, onLogout }) {
             value={inputText}
             onChangeText={setInputText}
             editable={!sendingMessage && !recordingVoice}
+            onKeyPress={handleKeyPress}
             multiline
             maxLength={1000}
           />
@@ -466,5 +669,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 2,
+  },
+  stopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginLeft: 12,
+  },
+  stopIcon: {
+    marginRight: 4,
+  },
+  stopBtnText: {
+    color: '#f87171',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  inlineErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f1315',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3d1d22',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  inlineErrorText: {
+    color: '#fca5a5',
+    fontSize: 13,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
+  closeErrorBtn: {
+    padding: 4,
   },
 });

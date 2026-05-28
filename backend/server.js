@@ -16,7 +16,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // 4. Connect to MongoDB database (with graceful local mock fallback logic)
 connectDB();
@@ -49,9 +50,9 @@ app.use((err, req, res, next) => {
 });
 
 // 9. Start Server Listening
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
-  console.log(`  🚀 API SERVER IS NOW ACTIVE AND RUNNING ON: http://localhost:${PORT}`);
+  console.log(`  🚀 API SERVER IS NOW ACTIVE AND RUNNING ON: http://0.0.0.0:${PORT}`);
   console.log(`  💡 Health Check: http://localhost:${PORT}/health`);
   console.log(`======================================================\n`);
 });
