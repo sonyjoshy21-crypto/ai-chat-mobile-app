@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { authAPI, setAuthToken } from '../services/api';
 
-export default function LoginScreen({ onLoginSuccess }) {
+export default function LoginScreen({ onLoginSuccess, isServerConnected, resolvedBaseUrl }) {
   const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -74,6 +74,22 @@ export default function LoginScreen({ onLoginSuccess }) {
           <Text style={styles.logoSubText}>VISIONARY BUSINESS ARCHITECTS</Text>
           <View style={styles.divider} />
           <Text style={styles.screenTitle}>{isLogin ? 'Sign In to Assistant' : 'Create Student Account'}</Text>
+          
+          {/* Connection Status Badge */}
+          <View style={[
+            styles.statusBadge,
+            isServerConnected ? styles.statusBadgeConnected : styles.statusBadgeDisconnected
+          ]}>
+            <Text style={[
+              styles.statusBadgeText,
+              isServerConnected ? styles.statusBadgeTextConnected : styles.statusBadgeTextDisconnected
+            ]}>
+              {isServerConnected 
+                ? `● Connected: ${resolvedBaseUrl.replace('http://', '').replace('/api', '')}` 
+                : '● Offline (Connecting...)'
+              }
+            </Text>
+          </View>
         </View>
 
         {/* Input Form Fields */}
@@ -302,5 +318,32 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontSize: 10,
     marginTop: 2,
+  },
+  statusBadge: {
+    marginTop: 12,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignSelf: 'center',
+  },
+  statusBadgeConnected: {
+    backgroundColor: 'rgba(52, 211, 153, 0.08)',
+    borderColor: 'rgba(52, 211, 153, 0.25)',
+  },
+  statusBadgeDisconnected: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  statusBadgeTextConnected: {
+    color: '#34d399',
+  },
+  statusBadgeTextDisconnected: {
+    color: '#f87171',
   },
 });

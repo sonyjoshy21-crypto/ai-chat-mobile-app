@@ -24,7 +24,7 @@ const getApiBaseUrl = () => {
   return 'http://localhost:5000/api';
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -33,6 +33,15 @@ const client = axios.create({
   },
   timeout: 8000 // Prevents screen hanging on slow networks
 });
+
+export const updateApiBaseUrl = (newUrlOrIp) => {
+  let url = newUrlOrIp;
+  if (!url.startsWith('http')) {
+    url = `http://${newUrlOrIp}:5000/api`;
+  }
+  client.defaults.baseURL = url;
+  console.log(`[API BaseURL Updated] New base URL: ${url}`);
+};
 
 // Cache token locally in memory
 let tokenCache = null;
