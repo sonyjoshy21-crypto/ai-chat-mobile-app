@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreen from './src/screens/LoginScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import { setAuthToken, API_BASE_URL, updateApiBaseUrl } from './src/services/api';
+import Constants from 'expo-constants';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -48,9 +49,23 @@ export default function App() {
 
   const runSubnetDiscovery = async () => {
     const subnetsToScan = [];
+    
+    // 1. Try to extract from current API URL
     const detectedSubnet = getSubnetFromUrl(API_BASE_URL);
     if (detectedSubnet) {
       subnetsToScan.push(detectedSubnet);
+    }
+    
+    // 2. Try to extract from Metro host URI (vital for hotspots / local networks)
+    const hostUri = Constants.expoConfig?.hostUri || Constants.manifest2?.extra?.expoGo?.developer?.toolUrl;
+    if (hostUri) {
+      const match = hostUri.match(/([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/);
+      if (match) {
+        const hostSubnet = `${match[1]}.${match[2]}.${match[3]}`;
+        if (!subnetsToScan.includes(hostSubnet)) {
+          subnetsToScan.push(hostSubnet);
+        }
+      }
     }
     
     const defaultSubnets = ['192.168.1', '192.168.0', '192.168.43', '172.20.10', '10.0.2'];
