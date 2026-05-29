@@ -65,9 +65,9 @@ export const authAPI = {
     }
   },
 
-  login: async (email, password) => {
+  login: async (username, password) => {
     try {
-      const response = await client.post('/auth/login', { email, password });
+      const response = await client.post('/auth/login', { username, password });
       return response.data;
     } catch (error) {
       throw error.response?.data?.message || 'Invalid username or password.';

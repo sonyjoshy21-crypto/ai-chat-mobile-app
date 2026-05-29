@@ -11,9 +11,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isServerConnected, setIsServerConnected] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
   const [resolvedBaseUrl, setResolvedBaseUrl] = useState(API_BASE_URL);
-  const [scanProgress, setScanProgress] = useState('');
 
   const checkServerHealth = async (baseUrl) => {
     try {
@@ -39,99 +37,6 @@ export default function App() {
     return false;
   };
 
-  const getSubnetFromUrl = (url) => {
-    const match = url.match(/https?:\/\/([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/);
-    if (match) {
-      return `${match[1]}.${match[2]}.${match[3]}`;
-    }
-    return null;
-  };
-
-  const runSubnetDiscovery = async () => {
-    const subnetsToScan = [];
-    
-    // 1. Try to extract from current API URL
-    const detectedSubnet = getSubnetFromUrl(API_BASE_URL);
-    if (detectedSubnet) {
-      subnetsToScan.push(detectedSubnet);
-    }
-    
-    // 2. Try to extract from Metro host URI (vital for hotspots / local networks)
-    const hostUri = Constants.expoConfig?.hostUri || Constants.manifest2?.extra?.expoGo?.developer?.toolUrl;
-    if (hostUri) {
-      const match = hostUri.match(/([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/);
-      if (match) {
-        const hostSubnet = `${match[1]}.${match[2]}.${match[3]}`;
-        if (!subnetsToScan.includes(hostSubnet)) {
-          subnetsToScan.push(hostSubnet);
-        }
-      }
-    }
-    
-    const defaultSubnets = ['192.168.1', '192.168.0', '192.168.43', '172.20.10', '10.0.2'];
-    for (const subnet of defaultSubnets) {
-      if (!subnetsToScan.includes(subnet)) {
-        subnetsToScan.push(subnet);
-      }
-    }
-
-    const port = 5000;
-    
-    const probeIp = async (ipAddress) => {
-      try {
-        const healthUrl = `http://${ipAddress}:${port}/health`;
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), 850);
-        
-        const response = await fetch(healthUrl, {
-          signal: controller.signal,
-          headers: { 'Accept': 'application/json' }
-        });
-        clearTimeout(id);
-        
-        if (response.status === 200) {
-          const data = await response.json();
-          if (data && data.status === 'healthy') {
-            return ipAddress;
-          }
-        }
-      } catch (e) {
-        // Ignore failure
-      }
-      return null;
-    };
-
-    for (const subnet of subnetsToScan) {
-      setScanProgress(`Sweeping local network range ${subnet}.x...`);
-      
-      const batchSize = 25;
-      for (let i = 1; i <= 254; i += batchSize) {
-        const promises = [];
-        const end = Math.min(i + batchSize - 1, 254);
-        
-        for (let host = i; host <= end; host++) {
-          const ip = `${subnet}.${host}`;
-          promises.push(probeIp(ip));
-        }
-        
-        const results = await Promise.all(promises);
-        const foundIp = results.find(res => res !== null);
-        
-        if (foundIp) {
-          const newBaseUrl = `http://${foundIp}:${port}/api`;
-          updateApiBaseUrl(newBaseUrl);
-          setResolvedBaseUrl(newBaseUrl);
-          setIsServerConnected(true);
-          setIsScanning(false);
-          return true;
-        }
-      }
-    }
-    
-    setScanProgress('Backend server not found. Sweeping again...');
-    return false;
-  };
-
   useEffect(() => {
     let isMounted = true;
     
@@ -151,29 +56,20 @@ export default function App() {
     };
 
     const verifyConnection = async () => {
-      setScanProgress('Connecting to backend...');
-      const isHealthy = await checkServerHealth(API_BASE_URL);
-      if (isHealthy) {
-        if (isMounted) {
-          setIsServerConnected(true);
-          setIsScanning(false);
-          setResolvedBaseUrl(API_BASE_URL);
-          await restoreSession();
-          setLoading(false);
-        }
-        return;
-      }
-      
+      await restoreSession();
       if (isMounted) {
-        setIsScanning(true);
-        await restoreSession();
         setLoading(false);
       }
       
+      let connected = false;
       while (isMounted) {
-        const found = await runSubnetDiscovery();
-        if (found) break;
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        const isHealthy = await checkServerHealth(API_BASE_URL);
+        if (isMounted) {
+          setIsServerConnected(isHealthy);
+          setResolvedBaseUrl(API_BASE_URL);
+          connected = isHealthy;
+        }
+        await new Promise(resolve => setTimeout(resolve, connected ? 10000 : 5000));
       }
     };
 
@@ -215,47 +111,7 @@ export default function App() {
     );
   }
 
-  if (isScanning) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0d0e15" />
-        <View style={[styles.mainContainer, styles.centerContainer]}>
-          <View style={styles.glassCard}>
-            <View style={styles.pulseRing}>
-              <ActivityIndicator size="large" color="#6366f1" />
-            </View>
-            <Text style={styles.scanningTitle}>SEARCHING BACKEND</Text>
-            <Text style={styles.scanningSubtitle}>
-              Please ensure your PC and phone are on the same Wi-Fi or hotspot network.
-            </Text>
-            
-            <View style={styles.progressBar}>
-              <Text style={styles.progressText}>{scanProgress}</Text>
-            </View>
 
-            <TouchableOpacity 
-              style={styles.retryBtn} 
-              onPress={() => {
-                updateApiBaseUrl(API_BASE_URL);
-                setResolvedBaseUrl(API_BASE_URL);
-                setScanProgress('Re-checking default server configuration...');
-                checkServerHealth(API_BASE_URL).then(healthy => {
-                  if (healthy) {
-                    setIsServerConnected(true);
-                    setIsScanning(false);
-                  } else {
-                    setScanProgress('Default server unavailable. Running auto-scan...');
-                  }
-                });
-              }}
-            >
-              <Text style={styles.retryBtnText}>Retry Default IP</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>

@@ -28,7 +28,7 @@ const init = async () => {
     _id: 'msg_seed_1',
     userId: 'default_evaluator_id',
     sender: 'ai',
-    text: "Hello! I am your AI Assistant. MongoDB is running in offline mock mode. Feel free to ask me anything!",
+    text: "Hello! I am your AI Assistant. Feel free to ask me anything!",
     createdAt: new Date(Date.now() - 5000)
   });
 };
@@ -40,6 +40,9 @@ module.exports = {
     find: async (query) => {
       if (query.email) {
         return state.users.find(u => u.email.toLowerCase() === query.email.toLowerCase());
+      }
+      if (query.name) {
+        return state.users.find(u => u.name.toLowerCase() === query.name.toLowerCase());
       }
       return null;
     },

@@ -31,13 +31,29 @@ exports.register = async (req, res) => {
     });
   }
 
+  if (!email.toLowerCase().endsWith('@gmail.com')) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Registration requires a valid Google mail address (@gmail.com).' 
+    });
+  }
+
   try {
-    // 2. Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // 2. Check if email already exists
+    const existingEmailUser = await User.findOne({ email });
+    if (existingEmailUser) {
       return res.status(400).json({ 
         success: false, 
         message: 'A user with this email address already exists.' 
+      });
+    }
+
+    // Check if username already exists
+    const existingNameUser = await User.findOne({ name });
+    if (existingNameUser) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'A user with this username already exists.' 
       });
     }
 
@@ -70,23 +86,23 @@ exports.register = async (req, res) => {
 // @route   POST api/auth/login
 // @desc    Authenticate user & get token
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
   // 1. Basic validation
-  if (!email || !password) {
+  if (!username || !password) {
     return res.status(400).json({ 
       success: false, 
-      message: 'Please provide both email and password.' 
+      message: 'Please provide both username and password.' 
     });
   }
 
   try {
-    // 2. Find User
-    const user = await User.findOne({ email });
+    // 2. Find User by username (name)
+    const user = await User.findOne({ name: username });
     if (!user) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid login credentials (email or password).' 
+        message: 'Invalid login credentials (username or password).' 
       });
     }
 
@@ -95,7 +111,7 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid login credentials (email or password).' 
+        message: 'Invalid login credentials (username or password).' 
       });
     }
 

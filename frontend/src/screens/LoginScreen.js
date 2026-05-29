@@ -26,9 +26,20 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
     setErrorMsg('');
     
     // Validation checks
-    if (!email || !password || (!isLogin && !name)) {
-      setErrorMsg('Please fill in all standard credentials.');
-      return;
+    if (isLogin) {
+      if (!name.trim() || !password) {
+        setErrorMsg('Please enter both username and password.');
+        return;
+      }
+    } else {
+      if (!name.trim() || !email.trim() || !password) {
+        setErrorMsg('Please fill in all credentials.');
+        return;
+      }
+      if (!email.trim().toLowerCase().endsWith('@gmail.com')) {
+        setErrorMsg('Registration requires a Gmail address (@gmail.com).');
+        return;
+      }
     }
 
     if (password.length < 6) {
@@ -39,7 +50,7 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
     setLoading(true);
     try {
       if (isLogin) {
-        const response = await authAPI.login(email.trim(), password);
+        const response = await authAPI.login(name.trim(), password);
         setAuthToken(response.token);
         onLoginSuccess({ ...response.user, token: response.token });
       } else {
@@ -73,7 +84,7 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
           <Text style={styles.logoText}>A D D O N E Z</Text>
           <Text style={styles.logoSubText}>VISIONARY BUSINESS ARCHITECTS</Text>
           <View style={styles.divider} />
-          <Text style={styles.screenTitle}>{isLogin ? 'Sign In to Assistant' : 'Create Student Account'}</Text>
+          <Text style={styles.screenTitle}>{isLogin ? 'Sign In to Assistant' : 'Create Account'}</Text>
           
           {/* Connection Status Badge */}
           <View style={[
@@ -84,10 +95,7 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
               styles.statusBadgeText,
               isServerConnected ? styles.statusBadgeTextConnected : styles.statusBadgeTextDisconnected
             ]}>
-              {isServerConnected 
-                ? `● Connected: ${resolvedBaseUrl.replace('http://', '').replace('/api', '')}` 
-                : '● Offline (Connecting...)'
-              }
+              {isServerConnected ? '● Connected' : '● Offline'}
             </Text>
           </View>
         </View>
@@ -100,44 +108,44 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
             </View>
           ) : null}
 
-          {/* Name Field (Sign Up Only) */}
-          {!isLogin && (
-            <View style={styles.inputWrapper}>
-              <Text style={styles.fieldLabel}>Full Name</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  focusField === 'name' && styles.inputFocused
-                ]}
-                placeholder="Enter your name"
-                placeholderTextColor="#64748b"
-                value={name}
-                onChangeText={setName}
-                onFocus={() => setFocusField('name')}
-                onBlur={() => setFocusField(null)}
-                autoCapitalize="words"
-              />
-            </View>
-          )}
-
-          {/* Email Field */}
+          {/* Username Field (Sign In and Sign Up) */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.fieldLabel}>Email Address</Text>
+            <Text style={styles.fieldLabel}>Username</Text>
             <TextInput
               style={[
                 styles.input,
-                focusField === 'email' && styles.inputFocused
+                focusField === 'name' && styles.inputFocused
               ]}
-              placeholder="e.g. candidate@example.com"
+              placeholder={isLogin ? "Enter your username" : "Choose a username"}
               placeholderTextColor="#64748b"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-              onFocus={() => setFocusField('email')}
+              value={name}
+              onChangeText={setName}
+              onFocus={() => setFocusField('name')}
               onBlur={() => setFocusField(null)}
+              autoCapitalize="none"
             />
           </View>
+
+          {/* Gmail Field (Sign Up Only) */}
+          {!isLogin && (
+            <View style={styles.inputWrapper}>
+              <Text style={styles.fieldLabel}>Gmail Address</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  focusField === 'email' && styles.inputFocused
+                ]}
+                placeholder="e.g. user@gmail.com"
+                placeholderTextColor="#64748b"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusField('email')}
+                onBlur={() => setFocusField(null)}
+              />
+            </View>
+          )}
 
           {/* Password Field */}
           <View style={styles.inputWrapper}>
@@ -188,8 +196,8 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
 
         {/* Evaluation Footer */}
         <View style={styles.footerNote}>
-          <Text style={styles.footerNoteText}>MERN Stack Development Assessment</Text>
-          <Text style={styles.footerNoteSubText}>React Native Frontend • Express API Backend</Text>
+          <Text style={styles.footerNoteText}>Personal AI Assistant</Text>
+          <Text style={styles.footerNoteSubText}>Secure Chat Interface</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -8,6 +8,7 @@ const UserSchema = new mongoose.Schema({
   name: { 
     type: String, 
     required: true,
+    unique: true,
     trim: true
   },
   email: { 
@@ -48,11 +49,11 @@ const MongooseUser = mongoose.model('User', UserSchema);
 
 // 2. Encapsulated Model Wrapper to guarantee operations continue if Database is offline
 class User {
-  static async findOne({ email }) {
+  static async findOne(query) {
     if (db.getStatus()) {
-      return await MongooseUser.findOne({ email });
+      return await MongooseUser.findOne(query);
     } else {
-      return await memoryDb.users.find({ email });
+      return await memoryDb.users.find(query);
     }
   }
 
