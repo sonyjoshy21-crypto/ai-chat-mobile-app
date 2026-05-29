@@ -13,11 +13,25 @@ import {
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { chatAPI, setAuthToken } from '../services/api';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-import { chatAPI, setAuthToken } from '../services/api';
 import MessageBubble from '../components/MessageBubble';
 import VoiceIndicator from '../components/VoiceIndicator';
+
+// Safely require expo-speech-recognition native module to prevent startup crashes in Expo Go
+let ExpoSpeechRecognitionModule = null;
+try {
+  const SpeechModule = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = SpeechModule.ExpoSpeechRecognitionModule;
+} catch (e) {
+  console.warn("ExpoSpeechRecognition native module is not available in this environment. Falling back to MERN backend transcription.");
+}
+
+const isNativeSTTAvailable = !!(
+  ExpoSpeechRecognitionModule && 
+  typeof ExpoSpeechRecognitionModule.start === 'function'
+);
 
 export default function ChatScreen({ user, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -33,7 +47,6 @@ export default function ChatScreen({ user, onLogout }) {
   const scrollViewRef = useRef();
   const abortControllerRef = useRef(null);
   const simulatedVoiceTimeoutRef = useRef(null);
-  const recognitionRef = useRef(null);
   const isSendingRef = useRef(false);
   const recordingRef = useRef(null);
 
@@ -44,6 +57,45 @@ export default function ChatScreen({ user, onLogout }) {
     }
     fetchHistory();
   }, [user]);
+
+  // Unified voice speech recognition listeners for Web, iOS, and Android
+  useEffect(() => {
+    if (!isNativeSTTAvailable) return;
+
+    const startSub = ExpoSpeechRecognitionModule.addListener("start", () => {
+      setRecordingVoice(true);
+      setErrorMsg('');
+    });
+
+    const endSub = ExpoSpeechRecognitionModule.addListener("end", () => {
+      setRecordingVoice(false);
+    });
+
+    const resultSub = ExpoSpeechRecognitionModule.addListener("result", (event) => {
+      const recognizedText = event.results?.[0]?.transcript || "";
+      if (recognizedText && recognizedText.trim() !== '') {
+        setInputText(recognizedText);
+        if (event.isFinal) {
+          handleSendMessage(recognizedText);
+        }
+      }
+    });
+
+    const errorSub = ExpoSpeechRecognitionModule.addListener("error", (event) => {
+      console.error("Speech recognition error:", event.error, event.message);
+      if (event.error !== "no-speech" && event.error !== "aborted") {
+        setErrorMsg(`Speech error: ${event.message || event.error}`);
+      }
+      setRecordingVoice(false);
+    });
+
+    return () => {
+      startSub.remove();
+      endSub.remove();
+      resultSub.remove();
+      errorSub.remove();
+    };
+  }, []);
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -133,61 +185,31 @@ export default function ChatScreen({ user, onLogout }) {
     }
   };
 
-  // 4. Voice speech recognition (Web Speech API with Native Mobile Audio Recording Fallback)
+  // 4. Voice speech recognition (Unified Expo Speech Recognition with fallback to Backend Audio Upload in Expo Go)
   const handleVoiceRecordTrigger = async () => {
     if (sendingMessage) return;
 
-    // Check if browser SpeechRecognition is available (Web mode)
-    const SpeechRecognition = Platform.OS === 'web'
-      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
-      : null;
-
-    if (SpeechRecognition) {
+    if (isNativeSTTAvailable) {
       try {
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
+        const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!permission.granted) {
+          setErrorMsg('Microphone and Speech Recognition permissions are required.');
           return;
         }
 
-        const recognition = new SpeechRecognition();
-        recognitionRef.current = recognition;
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-
-        recognition.onstart = () => {
-          setRecordingVoice(true);
-          setErrorMsg('');
-        };
-
-        recognition.onresult = (event) => {
-          const speechToText = event.results[0][0].transcript;
-          if (speechToText && speechToText.trim() !== '') {
-            setInputText(speechToText);
-            handleSendMessage(speechToText);
-          }
-        };
-
-        recognition.onerror = (event) => {
-          console.error('Speech recognition error:', event.error);
-          if (event.error !== 'no-speech' && event.error !== 'aborted') {
-            setErrorMsg(`Speech error: ${event.error}`);
-          }
-        };
-
-        recognition.onend = () => {
-          setRecordingVoice(false);
-          recognitionRef.current = null;
-        };
-
-        recognition.start();
+        setErrorMsg('');
+        ExpoSpeechRecognitionModule.start({
+          lang: 'en-US',
+          continuous: false,
+          interimResults: true,
+        });
       } catch (err) {
-        console.error('Speech Recognition initialization failed, falling back:', err);
-        startMobileRecording();
+        console.error('Failed to start speech recognition:', err);
+        setErrorMsg('Failed to initialize speech recognition.');
       }
     } else {
-      // Mobile / Native Platform: Start real recording using expo-av!
-      startMobileRecording();
+      // Fallback path: record audio using expo-av and upload to backend
+      await startMobileRecording();
     }
   };
 
@@ -217,6 +239,13 @@ export default function ChatScreen({ user, onLogout }) {
   };
 
   const stopMobileRecordingAndTranscribe = async () => {
+    if (isNativeSTTAvailable) {
+      ExpoSpeechRecognitionModule.stop();
+      setRecordingVoice(false);
+      return;
+    }
+
+    // Fallback path
     if (!recordingRef.current) return;
 
     try {
@@ -231,8 +260,7 @@ export default function ChatScreen({ user, onLogout }) {
           encoding: 'base64',
         });
 
-        // Determine mimeType (m4a is the default recording format on iOS/Android high quality preset)
-        const mimeType = Platform.OS === 'ios' ? 'audio/x-m4a' : 'audio/m4a';
+        const mimeType = 'audio/m4a';
 
         setSendingMessage(true);
         setNewAiMsgId(null);
@@ -255,7 +283,6 @@ export default function ChatScreen({ user, onLogout }) {
           setMessages((prev) => prev.filter(m => m._id !== localUserMsg._id));
 
           if (response.text && response.text.trim() !== '') {
-            // Trigger actual message send with transcribed text
             handleSendMessage(response.text);
           } else {
             setErrorMsg('Speech could not be transcribed or was empty.');
@@ -277,9 +304,14 @@ export default function ChatScreen({ user, onLogout }) {
   };
 
   const handleCancelVoiceRecording = async () => {
-    if (Platform.OS === 'web' && recognitionRef.current) {
-      recognitionRef.current.abort();
-    } else if (recordingRef.current) {
+    if (isNativeSTTAvailable) {
+      ExpoSpeechRecognitionModule.abort();
+      setRecordingVoice(false);
+      return;
+    }
+
+    // Fallback path
+    if (recordingRef.current) {
       try {
         setRecordingVoice(false);
         await recordingRef.current.stopAndUnloadAsync();

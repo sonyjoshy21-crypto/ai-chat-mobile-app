@@ -140,6 +140,29 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
+// Helper for Gemini transcription with timeout
+const runTranscriptionQuery = async (modelName, audioData, mimeType) => {
+  const model = genAI.getGenerativeModel({ model: modelName });
+  
+  const apiPromise = model.generateContent([
+    {
+      inlineData: {
+        data: audioData,
+        mimeType: mimeType
+      }
+    },
+    "Transcribe the following audio precisely. Return ONLY the transcribed text. Do not include any explanations, greetings, or formatting. If there is no audible speech, return an empty string."
+  ]);
+
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Gemini API Timeout')), 4000)
+  );
+
+  const result = await Promise.race([apiPromise, timeoutPromise]);
+  const response = await result.response;
+  return response.text().trim();
+};
+
 // @route   POST api/chat/transcribe
 // @desc    Transcribe base64 audio using Gemini AI
 exports.transcribeVoice = async (req, res) => {
@@ -156,34 +179,31 @@ exports.transcribeVoice = async (req, res) => {
     let transcribedText = '';
 
     if (genAI) {
+      const primaryModel = process.env.GEMINI_STT_MODEL || 'gemini-2.5-flash';
+      let fallbackModel = 'gemini-2.0-flash';
+      if (primaryModel === 'gemini-2.0-flash') {
+        fallbackModel = 'gemini-2.5-flash';
+      }
+
+      let normalizedMimeType = mimeType || 'audio/m4a';
+      if (normalizedMimeType === 'audio/x-m4a') {
+        normalizedMimeType = 'audio/m4a';
+      }
+
       try {
-        const sttModel = process.env.GEMINI_STT_MODEL || 'gemini-1.5-flash';
-        const model = genAI.getGenerativeModel({ model: sttModel });
-        
-        // Timeout promise of 4 seconds to prevent client timeout on 503 retry loops
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Gemini API Timeout')), 4000)
-        );
-
-        const apiPromise = model.generateContent([
-          {
-            inlineData: {
-              data: audio,
-              mimeType: mimeType || 'audio/m4a'
-            }
-          },
-          "Transcribe the following audio precisely. Return ONLY the transcribed text. Do not include any explanations, greetings, or formatting. If there is no audible speech, return an empty string."
-        ]);
-
-        const result = await Promise.race([apiPromise, timeoutPromise]);
-        const response = await result.response;
-        transcribedText = response.text().trim();
+        transcribedText = await runTranscriptionQuery(primaryModel, audio, normalizedMimeType);
       } catch (sdkError) {
-        console.error('[Gemini STT Failed]', sdkError);
-        return res.status(503).json({
-          success: false,
-          message: 'Voice transcription is temporarily unavailable. Please try typing your message.'
-        });
+        console.warn(`[Gemini STT Primary Model (${primaryModel}) Failed]`, sdkError.message || sdkError);
+        try {
+          console.log(`[Gemini STT] Retrying transcription with fallback model (${fallbackModel})...`);
+          transcribedText = await runTranscriptionQuery(fallbackModel, audio, normalizedMimeType);
+        } catch (fallbackError) {
+          console.error('[Gemini STT Fallback Model Failed]', fallbackError.message || fallbackError);
+          return res.status(503).json({
+            success: false,
+            message: 'Voice transcription is temporarily unavailable due to high API demand. Please try typing your message.'
+          });
+        }
       }
     } else {
       // Simulate backend delay (800ms)
