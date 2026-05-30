@@ -65,12 +65,12 @@ export const authAPI = {
     }
   },
 
-  login: async (username, password) => {
+  login: async (email, password) => {
     try {
-      const response = await client.post('/auth/login', { username, password });
+      const response = await client.post('/auth/login', { email, password });
       return response.data;
     } catch (error) {
-      throw error.response?.data?.message || 'Invalid username or password.';
+      throw error.response?.data?.message || 'Invalid email or password.';
     }
   }
 };

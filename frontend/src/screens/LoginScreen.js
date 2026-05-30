@@ -27,8 +27,8 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
     
     // Validation checks
     if (isLogin) {
-      if (!name.trim() || !password) {
-        setErrorMsg('Please enter both username and password.');
+      if (!email.trim() || !password) {
+        setErrorMsg('Please enter both email and password.');
         return;
       }
     } else {
@@ -50,7 +50,7 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
     setLoading(true);
     try {
       if (isLogin) {
-        const response = await authAPI.login(name.trim(), password);
+        const response = await authAPI.login(email.trim(), password);
         setAuthToken(response.token);
         onLoginSuccess({ ...response.user, token: response.token });
       } else {
@@ -108,44 +108,44 @@ export default function LoginScreen({ onLoginSuccess, isServerConnected, resolve
             </View>
           ) : null}
 
-          {/* Username Field (Sign In and Sign Up) */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.fieldLabel}>Username</Text>
-            <TextInput
-              style={[
-                styles.input,
-                focusField === 'name' && styles.inputFocused
-              ]}
-              placeholder={isLogin ? "Enter your username" : "Choose a username"}
-              placeholderTextColor="#64748b"
-              value={name}
-              onChangeText={setName}
-              onFocus={() => setFocusField('name')}
-              onBlur={() => setFocusField(null)}
-              autoCapitalize="none"
-            />
-          </View>
-
-          {/* Gmail Field (Sign Up Only) */}
+          {/* Username Field (Sign Up Only) */}
           {!isLogin && (
             <View style={styles.inputWrapper}>
-              <Text style={styles.fieldLabel}>Gmail Address</Text>
+              <Text style={styles.fieldLabel}>Username</Text>
               <TextInput
                 style={[
                   styles.input,
-                  focusField === 'email' && styles.inputFocused
+                  focusField === 'name' && styles.inputFocused
                 ]}
-                placeholder="e.g. user@gmail.com"
+                placeholder="Choose a username"
                 placeholderTextColor="#64748b"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-                onFocus={() => setFocusField('email')}
+                value={name}
+                onChangeText={setName}
+                onFocus={() => setFocusField('name')}
                 onBlur={() => setFocusField(null)}
+                autoCapitalize="none"
               />
             </View>
           )}
+
+          {/* Email/Gmail Field (Sign In and Sign Up) */}
+          <View style={styles.inputWrapper}>
+            <Text style={styles.fieldLabel}>Email Address</Text>
+            <TextInput
+              style={[
+                styles.input,
+                focusField === 'email' && styles.inputFocused
+              ]}
+              placeholder={isLogin ? "Enter your email" : "e.g. user@gmail.com"}
+              placeholderTextColor="#64748b"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+              onFocus={() => setFocusField('email')}
+              onBlur={() => setFocusField(null)}
+            />
+          </View>
 
           {/* Password Field */}
           <View style={styles.inputWrapper}>

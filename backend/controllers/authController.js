@@ -86,23 +86,23 @@ exports.register = async (req, res) => {
 // @route   POST api/auth/login
 // @desc    Authenticate user & get token
 exports.login = async (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
 
   // 1. Basic validation
-  if (!username || !password) {
+  if (!email || !password) {
     return res.status(400).json({ 
       success: false, 
-      message: 'Please provide both username and password.' 
+      message: 'Please provide both email and password.' 
     });
   }
 
   try {
-    // 2. Find User by username (name)
-    const user = await User.findOne({ name: username });
+    // 2. Find User by email
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid login credentials (username or password).' 
+        message: 'Invalid login credentials (email or password).' 
       });
     }
 
@@ -111,7 +111,7 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid login credentials (username or password).' 
+        message: 'Invalid login credentials (email or password).' 
       });
     }
 
