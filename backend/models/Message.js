@@ -26,23 +26,18 @@ const MessageSchema = new mongoose.Schema({
 
 const MongooseMessage = mongoose.model('Message', MessageSchema);
 
-// 2. Encapsulated Model Wrapper to guarantee operations continue if Database is offline
+// 2. Encapsulated Model Wrapper to guarantee operations connect directly to MongoDB
 class Message {
   static async find({ userId }) {
-    if (db.getStatus()) {
-      return await MongooseMessage.find({ userId }).sort({ createdAt: 1 });
-    } else {
-      return await memoryDb.messages.find({ userId });
-    }
+    return await MongooseMessage.find({ userId }).sort({ createdAt: 1 });
   }
 
   static async create(msgData) {
-    if (db.getStatus()) {
-      const msg = new MongooseMessage(msgData);
-      return await msg.save();
-    } else {
-      return await memoryDb.messages.create(msgData);
-    }
+    console.log(`\n[Database Logging] Attempting to save message to MongoDB from ${msgData.sender}: "${msgData.text}"`);
+    const msg = new MongooseMessage(msgData);
+    const savedMsg = await msg.save();
+    console.log(`[Database Logging] ✅ Message saved to MongoDB Atlas! ID: ${savedMsg._id}`);
+    return savedMsg;
   }
 }
 

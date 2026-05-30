@@ -3,8 +3,10 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { connectDB } = require('./config/db');
 
+const path = require('path');
+
 // 1. Initializing Environment configs
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // 2. Setting up Express Application
 const app = express();
@@ -28,8 +30,10 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 
 // 6. Base Health Check Route
 app.get('/health', (req, res) => {
+  const { getStatus } = require('./config/db');
   res.status(200).json({
     status: 'healthy',
+    databaseConnected: getStatus(),
     timestamp: new Date(),
     environment: process.env.NODE_ENV || 'development'
   });

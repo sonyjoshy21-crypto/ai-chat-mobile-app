@@ -1,36 +1,57 @@
-/**
- * Memory Database Helper (Offline Fail-Safe)
- * 
- * Provides an in-memory storage array for Users and Messages to ensure the assessment application
- * remains 100% interactive and operational even if the database evaluator does not have a 
- * running MongoDB instance.
- */
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 
-const state = {
+const dbPath = path.join(__dirname, 'local_db.json');
+
+let state = {
   users: [],
   messages: []
 };
 
-// Seed standard testing user to make review instant
+// Load state from local file if it exists
+if (fs.existsSync(dbPath)) {
+  try {
+    state = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    console.log(` [Local File DB] Loaded existing data from local_db.json`);
+  } catch (error) {
+    console.error(` [Local File DB Error] Failed to read local_db.json:`, error.message);
+  }
+} else {
+  console.log(` [Local File DB] No local_db.json found. Creating a new one...`);
+}
+
+const saveState = () => {
+  try {
+    fs.writeFileSync(dbPath, JSON.stringify(state, null, 2), 'utf8');
+    console.log(` [Local File DB] Data successfully saved to local_db.json`);
+  } catch (error) {
+    console.error(` [Local File DB Error] Failed to write to local_db.json:`, error.message);
+  }
+};
+
+// Seed default evaluator if state is empty
 const init = async () => {
-  const hashedDefaultPassword = await bcrypt.hash('password123', 10);
-  state.users.push({
-    _id: 'default_evaluator_id',
-    name: 'Evaluator Demo',
-    email: 'test@example.com',
-    password: hashedDefaultPassword,
-    createdAt: new Date()
-  });
-  
-  // Seed a welcome message
-  state.messages.push({
-    _id: 'msg_seed_1',
-    userId: 'default_evaluator_id',
-    sender: 'ai',
-    text: "Hello! I am your AI Assistant. Feel free to ask me anything!",
-    createdAt: new Date(Date.now() - 5000)
-  });
+  if (state.users.length === 0) {
+    const hashedDefaultPassword = await bcrypt.hash('password123', 10);
+    state.users.push({
+      _id: 'default_evaluator_id',
+      name: 'Evaluator Demo',
+      email: 'test@example.com',
+      password: hashedDefaultPassword,
+      createdAt: new Date()
+    });
+    
+    // Seed a welcome message
+    state.messages.push({
+      _id: 'msg_seed_1',
+      userId: 'default_evaluator_id',
+      sender: 'ai',
+      text: "Hello! I am your AI Assistant. Feel free to ask me anything!",
+      createdAt: new Date(Date.now() - 5000)
+    });
+    saveState();
+  }
 };
 
 init();
@@ -56,6 +77,7 @@ module.exports = {
         createdAt: new Date()
       };
       state.users.push(newUser);
+      saveState();
       return newUser;
     }
   },
@@ -66,7 +88,7 @@ module.exports = {
         filtered = filtered.filter(m => m.userId === query.userId);
       }
       // Sort chronologically
-      return filtered.sort((a, b) => a.createdAt - b.createdAt);
+      return filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     },
     create: async (msgData) => {
       const newMsg = {
@@ -75,6 +97,7 @@ module.exports = {
         createdAt: new Date()
       };
       state.messages.push(newMsg);
+      saveState();
       return newMsg;
     }
   }

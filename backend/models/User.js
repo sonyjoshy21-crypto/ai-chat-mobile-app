@@ -47,38 +47,22 @@ UserSchema.methods.comparePassword = async function (candidatePassword) {
 
 const MongooseUser = mongoose.model('User', UserSchema);
 
-// 2. Encapsulated Model Wrapper to guarantee operations continue if Database is offline
+// 2. Encapsulated Model Wrapper to guarantee operations connect directly to MongoDB
 class User {
   static async findOne(query) {
-    if (db.getStatus()) {
-      return await MongooseUser.findOne(query);
-    } else {
-      return await memoryDb.users.find(query);
-    }
+    return await MongooseUser.findOne(query);
   }
 
   static async findById(id) {
-    if (db.getStatus()) {
-      return await MongooseUser.findById(id);
-    } else {
-      return await memoryDb.users.findById(id);
-    }
+    return await MongooseUser.findById(id);
   }
 
   static async create(userData) {
-    if (db.getStatus()) {
-      const user = new MongooseUser(userData);
-      return await user.save();
-    } else {
-      // For offline mock database, hash password manually
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(userData.password, salt);
-      return await memoryDb.users.create({
-        name: userData.name,
-        email: userData.email,
-        password: hashedPassword
-      });
-    }
+    console.log(`\n[Database Logging] Attempting to create user in MongoDB: ${userData.name} (${userData.email})`);
+    const user = new MongooseUser(userData);
+    const savedUser = await user.save();
+    console.log(`[Database Logging] ✅ User saved to MongoDB Atlas! ID: ${savedUser._id}`);
+    return savedUser;
   }
 
   static async comparePasswords(candidatePassword, hashedPassword) {

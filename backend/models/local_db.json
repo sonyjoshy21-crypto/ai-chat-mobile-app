@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "_id": "default_evaluator_id",
+      "name": "Evaluator Demo",
+      "email": "test@example.com",
+      "password": "$2a$10$9d.grLEF6EoFfa2Cp4avxONw7synil0jHS6GZVXc.XdUz1ayiVw0K",
+      "createdAt": "2026-05-30T05:41:59.270Z"
+    }
+  ],
+  "messages": [
+    {
+      "_id": "msg_seed_1",
+      "userId": "default_evaluator_id",
+      "sender": "ai",
+      "text": "Hello! I am your AI Assistant. Feel free to ask me anything!",
+      "createdAt": "2026-05-30T05:41:54.270Z"
+    }
+  ]
+}
